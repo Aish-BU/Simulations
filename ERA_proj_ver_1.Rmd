@@ -1,0 +1,129 @@
+---
+title: "ERA_proj_code_1"
+author: "Indraja Ravichandran"
+date: "2024-04-29"
+output: html_document
+---
+
+```{r, echo=TRUE}
+library(dplyr)
+set.seed(1223)
+
+group_size_dist <- c(0, 0.3, 0.1, 0.4, 0.2)  # Percentages
+group_sizes <- c(1, 2, 3, 4, 5)
+arrival_time_windows <- c(15, 10, 5, 10, 15)/60  # Inter-arrival times for each hour block
+simulation_hours <- seq(0, 5)  # Operating hours 5pm-10pm
+current_table_mix <- c(0, 21, 3)  # Numeric vector for 2, 4, and 6-top tables
+proposed_table_mix <- c(4, 17, 4)  # Numeric vector for 2, 4, and 6-top tables
+
+# Function to simulate arrivals based on inter-arrival time distribution
+simulate_arrivals <- function(inter_arrival_times, hours) {
+  arrivals <- numeric()
+  for (hour in hours) {
+    time <- hour
+    while (time < hour + 1) {
+      inter_arrival <- sample(inter_arrival_times, 1, replace = TRUE)
+      time <- time + inter_arrival
+      if (time < hour + 1) {
+        arrivals <- c(arrivals, time)
+      }
+    }
+  }
+  return(arrivals)
+}
+```
+```{r, echo=TRUE}
+simulate_night <- function(table_mix, arrival_time_windows, group_size_dist, simulation_hours) {
+  tables <- rep(seq_along(table_mix), times = table_mix)
+  table_states <- rep(0, length(tables))  # 0 for available, 1 for occupied
+  table_release_times <- rep(0, length(tables))  # Track when each table will be free
+  wait_times <- numeric()
+  arrivals <- simulate_arrivals(arrival_time_windows, simulation_hours)
+
+
+
+
+  # Adding variability in meal duration between 50 to 70 minutes
+  meal_duration <- runif(n = length(arrivals), min = 50/60, max = 70/60)  # Meal durations in hours
+  
+  for (i in seq_along(arrivals)) {
+    arrival <- arrivals[i]
+    group_size <- sample(group_sizes, size = 1, prob = group_size_dist)
+    suitable_table_index <- which(tables >= group_size & table_states == 0 & table_release_times <= arrival)
+    
+    if (length(suitable_table_index) > 0) {
+      chosen_table <- suitable_table_index[1]
+      table_states[chosen_table] <- 1
+      table_release_times[chosen_table] <- arrival + meal_duration[i]
+    } else {
+      # Find the next available time
+      if (length(table_release_times[table_release_times > arrival]) > 0) {
+        wait_times <- c(wait_times, min(table_release_times[table_release_times > arrival]) - arrival)
+      }
+    }
+  }
+  
+  # Convert wait times to minutes
+  wait_times_in_minutes <- wait_times * 60
+  
+  return(list(
+    avg_wait_time = mean(wait_times_in_minutes, na.rm = TRUE), 
+    utilization = mean(table_states)
+  ))
+}
+
+```
+The simulate_night function is  key component of a simulation designed to model
+the operations of a restaurant over a single evening, focusing on table occupancy 
+and customer arrivals. The function takes several parameters related to the restaurant's 
+seating arrangement and customer flow and sets up an environment to assess how well the 
+restaurant can accommodate groups of various sizes given a specific table mix
+
+The simulate_night function is used to simulate the restaurant's operations, focusing on seating customers and managing table turnover.
+
+Meal Duration Variability: 
+Before processing arrivals, the function generates random meal durations for each group. These durations vary between 50 and 70 minutes(mentioned in the case) and are stored in meal_duration.
+
+Processing Arrivals: 
+The function iterates through each customer arrival.
+Group Size Determination: For each arrival, a group size is randomly selected based on the predefined distribution (group_size_dist).
+
+Table Assignment: 
+Then we look for an available table that can accommodate the group size and is currently unoccupied (table_states == 0) and will be available by the time of the arrival (table_release_times <= arrival).
+
+Seating or Waiting:
+If a suitable table is found, the table is marked as occupied (table_states[chosen_table] <- 1), and the time it will be released is updated based on the arrival time plus the meal duration.
+If no suitable table is available, the function calculates the wait time by finding the earliest time a table will become free after the group's arrival and records this wait time.
+
+Wait Time Conversion: After all arrivals are processed, any wait times recorded (in hours) are converted to minutes for easier interpretation.
+Output: The function returns the average wait time and the utilization rate of the tables. The average wait time is calculated from wait_times_in_minutes, and utilization is calculated as the mean of table_states, representing the percentage of time that tables are occupied.
+```{r, echo=TRUE}
+# Function to run simulations and summarize results
+run_simulation <- function(table_mix, num_simulations = 1000) {
+  results <- replicate(num_simulations, simulate_night(table_mix, arrival_time_windows, group_size_dist, simulation_hours), simplify = FALSE)
+  
+  avg_wait_times <- sapply(results, function(res) res$avg_wait_time)
+  avg_utilization <- sapply(results, function(res) res$utilization)
+  
+  list(
+    avg_wait_time = mean(avg_wait_times),
+    utilization = mean(avg_utilization) * 100
+  )
+}
+
+# Run simulations for current and proposed table mixes
+results_current <- run_simulation(current_table_mix)
+results_proposed <- run_simulation(proposed_table_mix)
+
+# Print the results
+cat("Current Table Mix:\n")
+cat(results_current$avg_wait_time, "minutes\n")
+cat(results_current$utilization, "%\n\n")
+
+cat("Proposed Table Mix:\n")
+cat(results_proposed$avg_wait_time, "minutes\n")
+cat(results_proposed$utilization, "%\n")
+
+
+```
+

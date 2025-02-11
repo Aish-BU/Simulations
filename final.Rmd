@@ -1,0 +1,142 @@
+---
+title: "Untitled"
+author: "zhiyuan zhang"
+date: "2024-04-19"
+output: html_document
+---
+
+```{r}
+#1. Initialize parameters
+# Table configuration: current and proposed configurations
+current_table_mix <- c('4' = 21, '6' = 3) 
+proposed_table_mix <- c('2' = 4, '4' = 17, '6' = 4)  
+
+# Group sizes and their distribution probabilities
+group_sizes <- c(2, 3, 4, 5)  
+group_distribution <- c(0.3, 0.1, 0.4, 0.2) 
+
+# Opening and closing times (in minutes)
+opening_time <- 17 * 60  
+closing_time <- 22 * 60 
+
+# Maximum waiting time for customers
+max_wait_time <- 30 
+
+# Customer arrival intervals and their probability distribution
+# Cached for optimization
+arrival_rate <- c('17' = 1/15, '18' = 1/10, '19' = 1/5, '20' = 1/10, '21' = 1/15)
+
+inter_arrival_time <- function(current_time) {
+  hour <- floor((current_time - opening_time) / 60) + 17
+  return(rexp(1, rate = arrival_rate[as.character(hour)]))
+}
+
+#2. Assign tables to arriving customer groups.
+assign_table <- function(group_size, available_tables) {
+  suitable_sizes <- names(available_tables)[available_tables > 0]
+  assigned_table_size <- NA  # Initialize as unassigned
+
+  # Define preferable table sizes based on group size
+  preferred_order <- switch(as.character(group_size),
+                            '2' = c('2', '4', '6'),
+                            '3' = c('4', '6'),
+                            '4' = c('4', '6'),
+                            '5' = c('6'))
+  
+  assigned_table_size <- preferred_order[preferred_order %in% suitable_sizes][1]
+
+  # Update table availability
+  if (!is.na(assigned_table_size)) {
+    available_tables[assigned_table_size] <- available_tables[assigned_table_size] - 1
+  }
+
+  return(list("assigned_table_size" = assigned_table_size, "available_tables" = available_tables))
+}
+
+#3 Simulate the operation of the restaurant for one night.
+simulate_night <- function(table_mix) {
+  available_tables <- table_mix # Current table configuration
+  wait_list <- data.frame(arrival_time = integer(), group_size = integer())  # Initialize waiting queue
+  people_served <- 0 # Initialize number of customers served
+  people_left <- 0 # Initialize number of customers who left
+  tables_in_use <- data.frame(table_size = character(), release_time = integer())  # Track tables in use and their release time
+  
+  time <- opening_time
+  while(time < closing_time) {
+    # Check and release tables that are no longer in use
+    if (nrow(tables_in_use) > 0) {
+      available_to_release <- tables_in_use$release_time <= time
+      if (any(available_to_release)) {
+        table_counts <- table(tables_in_use[available_to_release, "table_size"])
+        available_tables[names(table_counts)] <- available_tables[names(table_counts)] + table_counts
+        tables_in_use <- tables_in_use[!available_to_release, ]
+      }
+    }
+    
+    # Check for customers who have waited too long
+    if (nrow(wait_list) > 0) {
+      overdue <- wait_list$arrival_time + max_wait_time < time
+      if (any(overdue)) {
+        people_left <- people_left + sum(wait_list$group_size[overdue])
+        wait_list <- wait_list[!overdue, ]
+      }
+    }
+    
+    # Determine the arrival interval for the next customer group
+    arrival_interval <- inter_arrival_time(time)
+    time <- time + arrival_interval
+    group_size <- sample(group_sizes, 1, prob=group_distribution)
+    
+    # Attempt to seat the group
+    seat_result <- assign_table(group_size, available_tables)
+    if (!is.na(seat_result$assigned_table_size)) {
+      people_served <- people_served + group_size
+      available_tables <- seat_result$available_tables
+      meal_duration <- sample(50:70, 1)
+      tables_in_use <- rbind(tables_in_use, data.frame(table_size = seat_result$assigned_table_size, release_time = time + meal_duration))
+    } else {
+      wait_list <- rbind(wait_list, data.frame(arrival_time = time, group_size = group_size))
+    }
+  }
+  
+  return(list(people_served = people_served, people_left = people_left))
+}
+
+#4 Generate statistical reports for the simulation results
+generate_report <- function(simulation_results) {
+  total_people_served <- sum(sapply(simulation_results, function(x) x$people_served))
+  total_people_left <- sum(sapply(simulation_results, function(x) x$people_left))
+  num_simulations <- length(simulation_results)
+  
+  average_people_served <- total_people_served / num_simulations
+  average_people_left <- total_people_left / num_simulations
+  
+  report <- list(
+    total_people_served = total_people_served,
+    total_people_left = total_people_left,
+    average_people_served = average_people_served,
+    average_people_left = average_people_left
+  )
+  
+  return(report)
+}
+
+#5 Repeat simulations for more stable results.
+set.seed(616)
+
+repeat_simulation <- function(n, table_mix) {
+  results <- replicate(n, simulate_night(table_mix), simplify = FALSE)
+  average_results <- generate_report(results)
+  return(average_results)
+}
+
+# Simulate with current and proposed table configurations
+n_simulations <- 1000
+current_results_report <- repeat_simulation(n_simulations, current_table_mix)
+proposed_results_report <- repeat_simulation(n_simulations, proposed_table_mix)
+
+# Print reports
+print(current_results_report)
+print(proposed_results_report)
+
+```
