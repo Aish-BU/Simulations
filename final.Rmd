@@ -1,6 +1,6 @@
 ---
 title: "Untitled"
-author: "zhiyuan zhang"
+author: "Aishwarya Malhotra"
 date: "2024-04-19"
 output: html_document
 ---
@@ -138,5 +138,6 @@ proposed_results_report <- repeat_simulation(n_simulations, proposed_table_mix)
 # Print reports
 print(current_results_report)
 print(proposed_results_report)
+
 
 ```
